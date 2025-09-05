@@ -143,7 +143,7 @@ def main():
         if st.button("🌐 한국어" if st.session_state.language == "en" else "🌐 English", 
                      key="lang_toggle", help="Switch language / 언어 변경"):
             st.session_state.language = "ko" if st.session_state.language == "en" else "en"
-            st.rerun()
+            # Don't use st.rerun() to preserve search results
     
     lang = st.session_state.language
     
@@ -170,24 +170,28 @@ def main():
     
     # About section - using Streamlit info box to avoid HTML rendering issues
     with st.container():
-        st.info("""
-        🎯 **How Professor Finder Works**
+        st.info(f"""
+        {get_text("how_it_works_title", lang)}
         
-        **Professor Finder** helps graduate students discover potential advisors by intelligently matching your research interests with faculty expertise and recent activity.
+        {get_text("how_it_works_description", lang)}
         
-        **📊 Our Ranking Process:**
-        - **Concept Matching (62.5%)**: Semantic analysis of research topics using OpenAlex and MeSH databases
-        - **Recent Publications (37.5%)**: Activity in your field based on papers from the past 5 years  
-        - **Smart Filtering**: Excludes medical doctors when searching non-medical fields
-        - **Grant Info**: Funding data shown for reference only (not used in ranking due to reliability issues)
+        {get_text("ranking_process", lang)}
+        {get_text("concept_matching", lang)}
+        {get_text("recent_publications", lang)}
+        {get_text("smart_filtering", lang)}
+        {get_text("grant_info", lang)}
         
-        **🔍 What We Care About:**
-        - **Research Relevance**: How closely their work aligns with your keywords
-        - **Recent Activity**: Publications in the last 5 years showing current engagement
-        - **Accessibility**: Contact information and verification links for each professor
-        - **Transparency**: Full provenance and explainable rankings you can trust
+        {get_text("what_we_care_about", lang)}
+        {get_text("research_relevance", lang)}
+        {get_text("recent_activity", lang)}
+        {get_text("university_diversity", lang)}
+        {get_text("transparency", lang)}
         
-        💡 **Tip**: Use 2-5 specific keywords describing your research interests for best results. The system will automatically expand your search with related terms.
+        {get_text("limitations_title", lang)}
+        {get_text("grant_reliability", lang)}
+        {get_text("department_gaps", lang)}
+        {get_text("publication_limit", lang)}
+        {get_text("manual_verification", lang)}
         """)
     
     # Keywords section
@@ -200,6 +204,11 @@ def main():
         key="keywords_input",
         label_visibility="hidden"  # Hide label visually but keep for screen readers
     )
+    
+    # Mark as interacted if user has typed keywords
+    if keywords:
+        st.session_state['form_interacted'] = True
+        
     st.markdown('</div>', unsafe_allow_html=True)
     
     # Years and Max Professors section  
@@ -222,7 +231,7 @@ def main():
     with col2:
         st.markdown(f"**👥 {get_text('max_per_uni_label', lang)}**")
         max_per_university = st.number_input(
-            "Max professors",  # Add label for accessibility
+            get_text("max_professors_label", lang),  # Add label for accessibility
             min_value=1,
             max_value=20,
             value=5,
@@ -237,11 +246,13 @@ def main():
     st.markdown(f'<div class="section-header">🏫 {get_text("institutions_label", lang)}</div>', unsafe_allow_html=True)
     st.markdown('<div class="form-section">', unsafe_allow_html=True)
     
-    # Initialize session state
+    # Simple session state - just track selected universities
     if 'selected_unis' not in st.session_state:
         st.session_state['selected_unis'] = []
-    if 'show_preview' not in st.session_state:
-        st.session_state['show_preview'] = None
+    
+    # Track if user has interacted with the form (to avoid showing warnings on first visit)
+    if 'form_interacted' not in st.session_state:
+        st.session_state['form_interacted'] = False
     
     # Quick filter buttons with preview functionality
     st.markdown('<p style="text-align: center; color: #666; margin-bottom: 1.5rem; font-size: 1.1rem;">Choose from curated university lists:</p>', unsafe_allow_html=True)
@@ -253,28 +264,19 @@ def main():
         if st.button(get_text("curated_unis", lang), 
                      key="curated_btn",
                      type="secondary"):
-            unis = CURATED_UNIVERSITIES[:15]
-            st.session_state['selected_unis'] = unis
-            st.session_state['show_preview'] = ("Top Programs", unis)
-            st.rerun()
+            st.session_state['selected_unis'] = CURATED_UNIVERSITIES[:15]
     
     with col2:
         if st.button(get_text("psychology_top", lang), 
                      key="psych_btn",
                      type="secondary"):
-            unis = get_psychology_sociology_top_programs()[:15]
-            st.session_state['selected_unis'] = unis
-            st.session_state['show_preview'] = ("Psychology Programs", unis)
-            st.rerun()
+            st.session_state['selected_unis'] = get_psychology_sociology_top_programs()[:15]
             
     with col3:
         if st.button(get_text("intl_friendly", lang), 
                      key="intl_btn",
                      type="secondary"):
-            unis = get_international_friendly_universities()[:15]
-            st.session_state['selected_unis'] = unis
-            st.session_state['show_preview'] = ("International Friendly", unis)
-            st.rerun()
+            st.session_state['selected_unis'] = get_international_friendly_universities()[:15]
     
     # Regional buttons
     st.markdown('<p style="text-align: center; color: #666; margin: 1.5rem 0 1rem 0; font-size: 1rem;">Or select by US region:</p>', unsafe_allow_html=True)
@@ -283,75 +285,44 @@ def main():
     
     with col_a:
         if st.button(get_text("northeast", lang), key="ne_btn", type="secondary"):
-            all_unis = get_northeast_universities()
-            # Only include universities that are in CURATED_UNIVERSITIES to avoid errors
-            unis = [uni for uni in all_unis if uni in CURATED_UNIVERSITIES]
+            unis = [uni for uni in get_northeast_universities() if uni in CURATED_UNIVERSITIES]
             st.session_state['selected_unis'] = unis
-            st.session_state['show_preview'] = ("Northeast", all_unis)  # Show all in preview
-            st.rerun()
     
     with col_b:
         if st.button(get_text("southeast", lang), key="se_btn", type="secondary"):
-            all_unis = get_southeast_universities()
-            unis = [uni for uni in all_unis if uni in CURATED_UNIVERSITIES]
+            unis = [uni for uni in get_southeast_universities() if uni in CURATED_UNIVERSITIES]
             st.session_state['selected_unis'] = unis
-            st.session_state['show_preview'] = ("Southeast", all_unis)
-            st.rerun()
     
     with col_c:
         if st.button(get_text("midwest", lang), key="mw_btn", type="secondary"):
-            all_unis = get_midwest_universities()
-            unis = [uni for uni in all_unis if uni in CURATED_UNIVERSITIES]
+            unis = [uni for uni in get_midwest_universities() if uni in CURATED_UNIVERSITIES]
             st.session_state['selected_unis'] = unis
-            st.session_state['show_preview'] = ("Midwest", all_unis)
-            st.rerun()
     
     with col_d:
         if st.button(get_text("southwest", lang), key="sw_btn", type="secondary"):
-            all_unis = get_southwest_universities()
-            unis = [uni for uni in all_unis if uni in CURATED_UNIVERSITIES]
+            unis = [uni for uni in get_southwest_universities() if uni in CURATED_UNIVERSITIES]
             st.session_state['selected_unis'] = unis
-            st.session_state['show_preview'] = ("Southwest", all_unis)
-            st.rerun()
     
     with col_e:
         if st.button(get_text("west", lang), key="w_btn", type="secondary"):
-            all_unis = get_west_universities()
-            unis = [uni for uni in all_unis if uni in CURATED_UNIVERSITIES]
+            unis = [uni for uni in get_west_universities() if uni in CURATED_UNIVERSITIES]
             st.session_state['selected_unis'] = unis
-            st.session_state['show_preview'] = ("West Coast", all_unis)
-            st.rerun()
-    
-    # Show preview of selected universities if available
-    if st.session_state.get('show_preview'):
-        category, unis_list = st.session_state['show_preview']
-        st.markdown(f"""
-        <div class="university-preview">
-            <strong>📋 {category} ({len(unis_list)} universities):</strong><br><br>
-            {'<br>'.join([f"• {uni}" for uni in unis_list[:10]])}
-            {f'<br><br><em>... and {len(unis_list) - 10} more</em>' if len(unis_list) > 10 else ''}
-        </div>
-        """, unsafe_allow_html=True)
     
     # Manual selection
     st.markdown('<p style="color: #666; margin: 1.5rem 0 0.5rem 0; text-align: center;">Or manually select universities:</p>', unsafe_allow_html=True)
     
-    # Filter selected unis to only include those in CURATED_UNIVERSITIES to avoid errors
-    valid_selected_unis = [uni for uni in st.session_state.get('selected_unis', []) if uni in CURATED_UNIVERSITIES]
-    
-    # Use a separate key to avoid session state conflicts
+    # Simple multiselect - let Streamlit handle everything
     selected_universities = st.multiselect(
-        "Universities",  # Add label for accessibility
+        get_text("universities_multiselect", lang),
         options=CURATED_UNIVERSITIES,
-        default=valid_selected_unis,
+        default=st.session_state['selected_unis'],
         help=get_text("institutions_help", lang),
-        key="university_multiselect",  # Changed key to avoid conflicts
-        label_visibility="hidden"  # Hide label visually
+        label_visibility="hidden"
     )
     
-    # Only update session state if multiselect actually changed to prevent race conditions
-    if selected_universities != st.session_state.get('selected_unis', []):
-        st.session_state['selected_unis'] = selected_universities
+    # Mark as interacted if user has selected universities
+    if selected_universities:
+        st.session_state['form_interacted'] = True
     
     # Show selection count
     if selected_universities:
@@ -372,8 +343,8 @@ def main():
     keywords_list = [kw.strip() for kw in keywords.split(",") if kw.strip()]
     can_search = len(keywords_list) >= 2 and len(selected_universities) >= 1
     
-    # Show validation status with fun styling
-    if not can_search:
+    # Show validation status with fun styling - but only after user has interacted
+    if not can_search and st.session_state['form_interacted']:
         if len(keywords_list) < 2:
             st.markdown(f"""
             <div style="background: linear-gradient(135deg, #f8d7da, #f5c6cb); color: #721c24; 
@@ -390,7 +361,7 @@ def main():
                 <strong>⚠️ {get_text("error_no_universities", lang)}</strong>
             </div>
             """, unsafe_allow_html=True)
-    else:
+    elif can_search and st.session_state['form_interacted']:
         st.markdown(f"""
         <div style="background: linear-gradient(135deg, #d1ecf1, #bee5eb); color: #0c5460; 
                     padding: 1.5rem; border-radius: 15px; margin: 1rem 0; 
@@ -411,7 +382,7 @@ def main():
             disabled=not can_search or search_running,
             type="primary",
             key="search_btn",
-            help="Search in progress..." if search_running else ("Start the intelligent professor search!" if can_search else "Please complete the form above"),
+            help=get_text("search_progress", lang) if search_running else (get_text("start_search", lang) if can_search else get_text("complete_form", lang)),
             use_container_width=True
         )
     
@@ -426,7 +397,7 @@ def main():
             st.session_state['search_running'] = False
 
 
-async def run_search_pipeline(institutions: List[str], keywords: List[str], years_window: int):
+async def run_search_pipeline(institutions: List[str], keywords: List[str], years_window: int, lang: str = "en"):
     """Run the complete search pipeline."""
     progress_bar = st.progress(0)
     status_text = st.empty()
@@ -434,17 +405,17 @@ async def run_search_pipeline(institutions: List[str], keywords: List[str], year
     
     try:
         # Step 1: Resolve institutions to ROR IDs
-        status_text.text("🏛️ Resolving institutions to ROR IDs...")
+        status_text.text(get_text("resolving_institutions", lang))
         progress_bar.progress(10)
         
         resolved_institutions = await resolve_institutions(institutions)
         
         if not resolved_institutions:
-            st.error("Could not resolve any institutions. Please check institution names.")
+            st.error(get_text("could_not_resolve", lang))
             return []
         
         with log_container:
-            st.success(f"Resolved {len(resolved_institutions)} institutions")
+            st.success(get_text("resolved_institutions", lang, count=len(resolved_institutions)))
             for inst in resolved_institutions:
                 st.text(f"✓ {inst.name} → {inst.display_name} (ROR: {inst.ror_id})")
         
@@ -462,7 +433,7 @@ async def run_search_pipeline(institutions: List[str], keywords: List[str], year
                 st.text(f"MeSH terms: {len(expanded_keywords.mesh_terms)}")
         
         # Step 3: Find authors by institution
-        status_text.text("👥 Discovering researchers...")
+        status_text.text(get_text("discovering_researchers", lang))
         progress_bar.progress(30)
         
         all_authors = []
@@ -476,7 +447,7 @@ async def run_search_pipeline(institutions: List[str], keywords: List[str], year
             progress_bar.progress(int(progress))
             
             with log_container:
-                st.text(f"Found {len(institution_authors)} authors at {institution.display_name}")
+                st.text(get_text("found_authors_at", lang, count=len(institution_authors), institution=institution.display_name))
         
         if not all_authors:
             st.error("No matching authors found.")
@@ -507,13 +478,13 @@ async def run_search_pipeline(institutions: List[str], keywords: List[str], year
                 await search_nsf_grants_for_authors(institution_authors, institution)
         
         # Step 6: Check recruitment signals
-        status_text.text("📢 Checking recruitment signals...")
+        status_text.text(get_text("checking_recruitment", lang))
         progress_bar.progress(85)
         
         await detect_recruitment_signals(all_authors)
         
         # Step 7: Build evidence and calculate scores
-        status_text.text("📊 Calculating scores...")
+        status_text.text(get_text("calculating_scores", lang))
         progress_bar.progress(90)
         
         # Debug: Check how many authors have grants (reduced logging)
@@ -622,7 +593,7 @@ def run_search(institutions: List[str], keywords: List[str], years_window: int, 
     st.markdown(f"### {get_text('results_title', lang)}")
     
     # Run the async pipeline
-    results = asyncio.run(run_search_pipeline(institutions, keywords, years_window))
+    results = asyncio.run(run_search_pipeline(institutions, keywords, years_window, lang))
     
     if not results:
         return
@@ -641,6 +612,81 @@ def run_search(institutions: List[str], keywords: List[str], years_window: int, 
                 university_counts[institution_name] = current_count + 1
         
         results = filtered_results
+        
+        # Now fetch grants ONLY for the final filtered results (much more efficient!)
+        st.info(f"🔍 Fetching grant data for {len(results)} final results...")
+        
+        # Group results by institution for efficient grant fetching
+        results_by_institution = {}
+        for result in results:
+            institution_name = result.evidence.profile.institution.display_name if result.evidence.profile.institution else "Unknown"
+            if institution_name not in results_by_institution:
+                results_by_institution[institution_name] = []
+            results_by_institution[institution_name].append(result)
+        
+        # Fetch grants for each institution's final results
+        async def fetch_grants_for_filtered_results():
+            # First resolve institutions to get Institution objects
+            from sources.ror import resolve_institutions
+            resolved_institutions = await resolve_institutions(institutions)
+            
+            for institution_name, institution_results in results_by_institution.items():
+                authors = [result.evidence.profile for result in institution_results]
+                # Find matching resolved institution
+                matching_institution = None
+                for resolved_inst in resolved_institutions:
+                    if resolved_inst.display_name == institution_name:
+                        matching_institution = resolved_inst
+                        break
+                
+                if matching_institution:
+                    try:
+                        await search_grants_for_authors(authors, matching_institution)
+                        await search_nsf_grants_for_authors(authors, matching_institution)
+                    except Exception as e:
+                        logger.warning(f"Could not fetch grants for {institution_name}: {e}")
+        
+        # Run the grant fetching
+        asyncio.run(fetch_grants_for_filtered_results())
+        st.success(f"✅ Grant data fetched for filtered results")
+        
+    else:
+        # No filtering applied, fetch grants for all results
+        st.info(f"🔍 Fetching grant data for {len(results)} results...")
+        
+        # Group all results by institution
+        results_by_institution = {}
+        for result in results:
+            institution_name = result.evidence.profile.institution.display_name if result.evidence.profile.institution else "Unknown"
+            if institution_name not in results_by_institution:
+                results_by_institution[institution_name] = []
+            results_by_institution[institution_name].append(result)
+        
+        # Fetch grants for all results
+        async def fetch_grants_for_all_results():
+            # First resolve institutions to get Institution objects
+            from sources.ror import resolve_institutions
+            resolved_institutions = await resolve_institutions(institutions)
+            
+            for institution_name, institution_results in results_by_institution.items():
+                authors = [result.evidence.profile for result in institution_results]
+                # Find matching institution
+                matching_institution = None
+                for resolved_inst in resolved_institutions:
+                    if resolved_inst.display_name == institution_name:
+                        matching_institution = resolved_inst
+                        break
+                
+                if matching_institution:
+                    try:
+                        await search_grants_for_authors(authors, matching_institution)
+                        await search_nsf_grants_for_authors(authors, matching_institution)
+                    except Exception as e:
+                        logger.warning(f"Could not fetch grants for {institution_name}: {e}")
+        
+        # Run the grant fetching
+        asyncio.run(fetch_grants_for_all_results())
+        st.success(f"✅ Grant data fetched for all results")
     
     # Display results with engaging design
     st.markdown(f"""

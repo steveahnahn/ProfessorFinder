@@ -63,9 +63,30 @@ async def find_authors_by_institution(institution: Institution,
             # Create evidence object with grants (if available)
             # Ensure data types are properly converted for Pydantic validation
             try:
+                # Ensure publications are properly validated Pydantic objects
+                publications = []
+                if hasattr(author, 'recent_publications') and author.recent_publications:
+                    from core.models import Publication
+                    for pub in author.recent_publications:
+                        if isinstance(pub, dict):
+                            publications.append(Publication(**pub))
+                        elif hasattr(pub, 'model_dump'):  # Already a Pydantic object
+                            publications.append(pub)
+                        else:
+                            # Convert object to dict first
+                            pub_dict = {
+                                'id': getattr(pub, 'id', ''),
+                                'title': getattr(pub, 'title', ''),
+                                'year': getattr(pub, 'year', 2024),
+                                'doi': getattr(pub, 'doi', None),
+                                'url': getattr(pub, 'url', ''),
+                                'matched_keywords': getattr(pub, 'matched_keywords', [])
+                            }
+                            publications.append(Publication(**pub_dict))
+                
                 evidence = AuthorEvidence(
                     profile=author,
-                    recent_publications=author.recent_publications if hasattr(author, 'recent_publications') and author.recent_publications else [],
+                    recent_publications=publications,
                     grants=author.grants if hasattr(author, 'grants') and author.grants else [],
                     matched_keywords=expanded_keywords.original
                 )
@@ -96,6 +117,13 @@ async def find_authors_by_institution(institution: Institution,
         # Only log summary if authors found, reduce noise
         if len(top_authors) > 0:
             logger.warning(f"Found {len(top_authors)} top authors at {institution.display_name}")
+        else:
+            # Debug 0 results specifically
+            logger.warning(f"Found 0 authors at {institution.display_name} - debugging...")
+            if "new york" in institution.display_name.lower():
+                logger.error(f"NYU DEBUG: Institution OpenAlex ID: {getattr(institution, 'openalex_id', 'MISSING')}")
+                logger.error(f"NYU DEBUG: Checking if this is an institution resolution issue")
+        
         return top_authors
         
     except Exception as e:
@@ -463,7 +491,78 @@ def _author_matches_keywords(author: AuthorProfile, expanded_keywords: ExpandedK
         logger.debug(f"Excluding {author.name}: only {original_matches}/{len(expanded_keywords.original)} original keyword matches (need {required_original_matches})")
         return False
     
-    # Rule 2: Expanded keywords are just a bonus - only require basic coverage  
+    # Rule 2: Smart field exclusions - filter out obviously unrelated fields
+    # BUT keep psychiatrists and clinical psychologists even if in medical contexts
+    
+    # Define clearly unrelated fields for psychology/suicide research
+    unrelated_fields = {
+        # Physical/Medical (but keep psychiatry/clinical)
+        'cancer', 'oncology', 'tumor', 'chemotherapy', 'radiation therapy', 'mammography',
+        'cardiology', 'heart disease', 'cardiovascular', 'cardiac',
+        'orthopedics', 'surgery', 'surgical', 'operative', 'anesthesia',
+        'infectious disease', 'microbiology', 'virology', 'bacteriology',
+        
+        # Developmental/Autism (unless related to mental health)
+        'autism spectrum disorder', 'developmental disorder', 'intellectual disability',
+        'down syndrome', 'cerebral palsy', 'developmental delays',
+        
+        # Vision/Perception
+        'visual perception', 'ophthalmology', 'retina', 'visual cortex', 'eye movement',
+        'vision', 'visual attention', 'visual processing', 'optics',
+        
+        # Pure Biology/Chemistry
+        'molecular biology', 'genetics', 'genomics', 'dna', 'biochemistry',
+        'cell biology', 'protein', 'enzyme', 'metabolism', 'immunology',
+        
+        # Engineering/Computer Science (unless AI/psychology)
+        'software engineering', 'computer programming', 'database', 'network',
+        'mechanical engineering', 'electrical engineering', 'robotics',
+        
+        # Pure Economics/Business
+        'finance', 'accounting', 'marketing', 'business management', 'economics',
+        'supply chain', 'logistics', 'operations research'
+    }
+    
+    # Define RELEVANT fields that should ALWAYS pass (even if keyword coverage is low)
+    relevant_fields = {
+        'psychology', 'psychiatry', 'clinical psychology', 'mental health',
+        'depression', 'anxiety', 'ptsd', 'trauma', 'suicide', 'bipolar disorder',
+        'cognitive behavioral therapy', 'psychotherapy', 'counseling',
+        'behavioral psychology', 'social psychology', 'abnormal psychology',
+        'personality disorders', 'mood disorders', 'eating disorders',
+        'substance abuse', 'addiction', 'psychiatric', 'psychopharmacology'
+    }
+    
+    # Check for unrelated field dominance
+    unrelated_count = 0
+    relevant_count = 0
+    
+    for topic in author.primary_topics[:5]:  # Check top 5 topics
+        topic_lower = topic.lower()
+        
+        # Count unrelated field matches
+        for field in unrelated_fields:
+            if field in topic_lower:
+                unrelated_count += 1
+                break
+        
+        # Count relevant field matches
+        for field in relevant_fields:
+            if field in topic_lower:
+                relevant_count += 1
+                break
+    
+    # If mostly unrelated fields and no relevant fields, exclude
+    if unrelated_count >= 2 and relevant_count == 0:
+        logger.debug(f"Excluding {author.name}: dominated by unrelated fields (unrelated={unrelated_count}, relevant={relevant_count}). Topics: {author.primary_topics[:3]}")
+        return False
+    
+    # If we have relevant fields, definitely include (even with low keyword coverage)
+    if relevant_count >= 1:
+        logger.debug(f"Including {author.name}: has relevant fields (relevant={relevant_count}). Topics: {author.primary_topics[:3]}")
+        return True
+    
+    # Rule 3: For borderline cases, require decent expanded keyword coverage  
     if len(expanded_keywords.all_expanded) > 0:
         min_expanded_ratio = 0.15  # Just 15% of expanded terms needed
         if (expanded_matches / len(expanded_keywords.all_expanded)) < min_expanded_ratio:

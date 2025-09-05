@@ -157,47 +157,57 @@ def score_grants(evidence: AuthorEvidence) -> float:
 
 def _generate_rationale(concept_score: float, works_score: float, 
                        grant_score: float, evidence: AuthorEvidence) -> str:
-    """Generate human-readable rationale for the scores."""
+    """Generate human-readable rationale with specific research details."""
     rationale_parts = []
     
-    # Concept score rationale
-    if concept_score > 0.7:
-        rationale_parts.append("Strong topic/concept match")
-    elif concept_score > 0.4:
-        rationale_parts.append("Moderate topic/concept match")
-    elif concept_score > 0.1:
-        rationale_parts.append("Some topic/concept match")
-    else:
-        rationale_parts.append("Limited topic/concept match")
+    # 1. SPECIFIC RESEARCH AREAS - What they actually work on
+    if evidence.profile.primary_topics:
+        main_topics = evidence.profile.primary_topics[:3]  # Top 3 topics
+        topic_str = ", ".join(main_topics)
+        rationale_parts.append(f"🔬 Research areas: {topic_str}")
     
-    # Works score rationale
+    # 2. RECENT WORK DETAILS - Specific publications and years
     matching_pubs = [pub for pub in evidence.recent_publications if pub.matched_keywords]
-    if works_score > 0.7:
-        rationale_parts.append(f"Highly relevant recent work ({len(matching_pubs)} matching publications)")
-    elif works_score > 0.4:
-        rationale_parts.append(f"Relevant recent work ({len(matching_pubs)} matching publications)")
-    elif works_score > 0.1:
-        rationale_parts.append(f"Some relevant recent work ({len(matching_pubs)} matching publications)")
-    else:
-        rationale_parts.append("Limited relevant recent work")
+    if matching_pubs:
+        # Show most recent publication
+        latest_pub = max(matching_pubs, key=lambda p: p.year)
+        matched_keywords_str = ", ".join(latest_pub.matched_keywords[:3])  # Top 3 matched keywords
+        rationale_parts.append(f"📄 Recent match: '{latest_pub.title[:60]}...' ({latest_pub.year}) - keywords: {matched_keywords_str}")
+        
+        # Publication activity summary
+        recent_years = [pub.year for pub in matching_pubs]
+        year_range = f"{min(recent_years)}-{max(recent_years)}" if len(set(recent_years)) > 1 else str(max(recent_years))
+        rationale_parts.append(f"📈 {len(matching_pubs)} relevant publications ({year_range})")
     
-    # Grant information (not used in ranking)
+    # 3. GRANT ACTIVITY - More specific about funding
     active_grants = [g for g in evidence.grants if g.is_active]
     if active_grants:
+        funders = list(set([g.funder for g in active_grants]))
+        funder_str = ", ".join(funders[:3])  # Top 3 funders
+        
         known_grants = [g for g in active_grants if getattr(g, 'confidence', 'unknown') == 'known']
         if known_grants:
-            rationale_parts.append(f"📊 Has {len(known_grants)} confirmed active grants")
+            rationale_parts.append(f"💰 Active funding from {funder_str} ({len(known_grants)} confirmed)")
         else:
-            rationale_parts.append(f"📊 Has {len(active_grants)} likely active grants")
+            rationale_parts.append(f"💰 Likely active funding from {funder_str} ({len(active_grants)} estimated)")
     elif evidence.grants:
-        rationale_parts.append(f"📊 Has {len(evidence.grants)} historical grants")
-    # No mention if no grants found (common and not negative)
+        historical_funders = list(set([g.funder for g in evidence.grants]))
+        funder_str = ", ".join(historical_funders[:3])
+        rationale_parts.append(f"💰 Previous funding from {funder_str}")
     
-    # Additional signals
+    # 4. POSITION/DEPARTMENT INFO
+    if evidence.profile.current_title and evidence.profile.department:
+        rationale_parts.append(f"👤 {evidence.profile.current_title} in {evidence.profile.department}")
+    elif evidence.profile.current_title:
+        rationale_parts.append(f"👤 {evidence.profile.current_title}")
+    elif evidence.profile.department:
+        rationale_parts.append(f"🏛️ {evidence.profile.department}")
+    
+    # 5. RECRUITING STATUS
     if hasattr(evidence, 'recruitment') and evidence.recruitment and evidence.recruitment.is_recruiting:
-        rationale_parts.append("Currently recruiting")
+        rationale_parts.append("🎯 Currently recruiting students")
     
-    return "; ".join(rationale_parts)
+    return " | ".join(rationale_parts)
 
 
 def rank_authors_by_score(authors_with_scores: List[tuple]) -> List[tuple]:

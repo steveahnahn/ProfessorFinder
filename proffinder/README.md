@@ -278,11 +278,26 @@ proffinder/
 
 ## 🚨 Limitations
 
+### Data Quality Issues
 - **US-focused**: Optimized for US universities and funding agencies
 - **English-only**: Best results with English-language keywords
+- **Department information** often unavailable from OpenAlex API - many results show empty departments
+- **Publication counts capped at 50** per author to prevent API timeouts (explains why many authors show exactly 50 recent publications)
 - **API Dependencies**: Results quality depends on external API availability  
 - **Rate Limits**: Large searches may take several minutes
+
+### Grant Data Limitations  
+- **Grant information is unreliable and incomplete**:
+  - Many grants are private or not publicly reported
+  - Industry/private foundation grants are largely unsourceable
+  - Grant databases (NIH, NSF) have significant coverage gaps
+  - Grant timing often lags actual funding by months/years
+- **Grant data excluded from ranking** due to these reliability issues
+- Grant information shown for reference only, should not be used as primary selection criteria
+
+### Technical Limitations
 - **Homepage Detection**: Only checks single homepage URL if available
+- **Author disambiguation**: Challenging - we do our best with name matching
 
 ## 🤝 Contributing
 
