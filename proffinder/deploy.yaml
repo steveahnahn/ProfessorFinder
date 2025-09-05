@@ -1,0 +1,69 @@
+# Cloud Run deployment configuration
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: proffinder
+  annotations:
+    run.googleapis.com/ingress: all
+spec:
+  template:
+    metadata:
+      annotations:
+        # CPU and memory limits (increased for API processing)
+        run.googleapis.com/cpu: "4"
+        run.googleapis.com/memory: "4Gi"
+        # Timeout (1 hour for large searches)
+        run.googleapis.com/timeout: "3600s"
+        # Use Gen2 for better performance and longer timeouts
+        run.googleapis.com/execution-environment: gen2
+        autoscaling.knative.dev/maxScale: "5"
+        autoscaling.knative.dev/minScale: "0"
+    spec:
+      containerConcurrency: 1
+      containers:
+      - image: gcr.io/PROJECT_ID/proffinder:latest
+        ports:
+        - containerPort: 8080
+        env:
+        - name: OPENALEX_MAILTO
+          value: "your-email@example.com"
+        - name: NCBI_API_KEY
+          value: "your_ncbi_api_key_here"
+        - name: REQUEST_TIMEOUT
+          value: "30"
+        - name: CONCURRENCY_PER_HOST
+          value: "5"
+        - name: DEFAULT_YEARS_WINDOW
+          value: "5"
+        - name: WEIGHT_CONCEPT
+          value: "0.5"
+        - name: WEIGHT_WORKS
+          value: "0.3"
+        - name: WEIGHT_GRANT
+          value: "0.2"
+        - name: VERIFY_SSL
+          value: "true"
+        resources:
+          limits:
+            cpu: 4000m
+            memory: 4Gi
+          requests:
+            cpu: 2000m
+            memory: 2Gi
+        # Readiness probe
+        readinessProbe:
+          httpGet:
+            path: /_stcore/health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        # Liveness probe
+        livenessProbe:
+          httpGet:
+            path: /_stcore/health
+            port: 8080
+          initialDelaySeconds: 60
+          periodSeconds: 30
+  traffic:
+  - percent: 100
+    latestRevision: true

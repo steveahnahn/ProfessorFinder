@@ -1,0 +1,6 @@
+.env
+venv
+.claude
+*.pyc
+__pycache__/
+.proffinder_cache/
