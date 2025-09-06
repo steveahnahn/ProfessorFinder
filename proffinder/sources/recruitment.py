@@ -79,7 +79,8 @@ async def detect_recruitment_signals(authors: List[AuthorProfile]) -> List[Autho
             logger.info("Reached recruitment check limit (50)")
             break
     
-    await client.close()
+    # Don't close the client here - it's a shared instance!
+    # await client.close()  # REMOVED: This was closing the shared HTTP client
     logger.info(f"Found {len(enriched_authors)} professors actively seeking graduate students")
     return enriched_authors
 

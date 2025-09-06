@@ -15,7 +15,8 @@ logger = logging.getLogger(__name__)
 
 async def find_authors_by_institution(institution: Institution, 
                                     expanded_keywords: ExpandedKeywords,
-                                    years_window: int = 5) -> List[AuthorProfile]:
+                                    years_window: int = 5,
+                                    include_medical_doctors: bool = False) -> List[AuthorProfile]:
     """Find authors associated with an institution."""
     import os
     
@@ -25,7 +26,7 @@ async def find_authors_by_institution(institution: Institution,
     try:
         # Method 1: Direct author search by institution
         institution_authors = await _search_authors_by_institution(
-            client, institution, expanded_keywords, years_window
+            client, institution, expanded_keywords, years_window, include_medical_doctors
         )
         authors.extend(institution_authors)
         
@@ -34,7 +35,7 @@ async def find_authors_by_institution(institution: Institution,
         simple_mode = os.getenv("SIMPLE_MODE", "false").lower() == "true"
         if not simple_mode:
             works_authors = await _search_authors_through_works(
-                client, institution, expanded_keywords, years_window
+                client, institution, expanded_keywords, years_window, include_medical_doctors
             )
             authors.extend(works_authors)
         else:
@@ -56,7 +57,7 @@ async def find_authors_by_institution(institution: Institution,
         scored_authors = []
         for author in authors_with_grants:
             # Apply final filtering check to ensure no unqualified authors slip through
-            if not _author_matches_keywords(author, expanded_keywords):
+            if not _author_matches_keywords(author, expanded_keywords, include_medical_doctors):
                 logger.debug(f"Final filter: excluding {author.name}")
                 continue
                 
@@ -133,7 +134,8 @@ async def find_authors_by_institution(institution: Institution,
 
 async def _search_authors_by_institution(client, institution: Institution, 
                                        expanded_keywords: ExpandedKeywords,
-                                       years_window: int) -> List[AuthorProfile]:
+                                       years_window: int,
+                                       include_medical_doctors: bool = False) -> List[AuthorProfile]:
     """Search authors directly by institution affiliation."""
     authors = []
     cursor = "*"
@@ -142,32 +144,50 @@ async def _search_authors_by_institution(client, institution: Institution,
     # Cast wider net initially - we'll score and filter later
     while cursor and page_count < 5:  # Get more candidates for scoring
         try:
-            # Use OpenAlex Institution ID if available, fallback to ROR ID
-            institution_filter = None
-            if institution.openalex_id:
-                institution_filter = f"last_known_institutions.id:https://openalex.org/{institution.openalex_id}"
-            else:
-                institution_filter = f"last_known_institutions.id:https://ror.org/{institution.ror_id}"
-                logger.warning(f"No OpenAlex ID for {institution.display_name}, using ROR ID")
-                
-            params = {
-                "filter": institution_filter,
-                "per_page": 50,  # Smaller page size
-                "cursor": cursor,
-                "mailto": OPENALEX_MAILTO,
-                "select": "id,display_name,orcid,last_known_institutions,x_concepts,topics,works_count"
-            }
+            # Try multiple fallback strategies for institution filtering
+            response = None
+            filter_strategies = []
             
-            # logger.info(f"Searching authors at {institution.display_name} (page {page_count + 1})")  # Reduced verbosity
-            response = await cached_get_json(
-                client, 
-                f"{API_ENDPOINTS['openalex']}/authors",
-                params
-            )
+            if institution.openalex_id:
+                # Only one strategy needed if we have OpenAlex ID
+                filter_strategies = [
+                    (f"last_known_institutions.id:https://openalex.org/{institution.openalex_id}", "OpenAlex ID")
+                ]
+            else:
+                # Try ROR ID first, then fall back to name search
+                filter_strategies = [
+                    (f"last_known_institutions.id:https://ror.org/{institution.ror_id}", "ROR ID"),
+                    (f'last_known_institutions.display_name:"{institution.display_name}"', "Institution Name")
+                ]
+            
+            # Try each strategy until one works
+            for institution_filter, strategy_name in filter_strategies:
+                params = {
+                    "filter": institution_filter,
+                    "per_page": 50,  # Smaller page size
+                    "cursor": cursor,
+                    "mailto": OPENALEX_MAILTO,
+                    "select": "id,display_name,orcid,last_known_institutions,x_concepts,topics,works_count"
+                }
+                
+                logger.debug(f"Trying {strategy_name} filter for {institution.display_name}")
+                response = await cached_get_json(
+                    client, 
+                    f"{API_ENDPOINTS['openalex']}/authors",
+                    params
+                )
+                
+                if response and "results" in response:
+                    logger.info(f"Successfully found authors using {strategy_name} for {institution.display_name}")
+                    break
+                elif response is None and strategy_name == "ROR ID":
+                    logger.warning(f"ROR ID failed (likely 403) for {institution.display_name}, trying name search...")
+                    continue
+            
             page_count += 1
             
             if not response or "results" not in response:
-                logger.warning(f"No response or results for {institution.display_name}")
+                logger.warning(f"No response or results for {institution.display_name} after trying all strategies")
                 break
             
             results_count = len(response.get("results", []))
@@ -177,7 +197,7 @@ async def _search_authors_by_institution(client, institution: Institution,
                 author = _parse_author_profile(author_data, institution)
                 if author:
                     logger.debug(f"Parsed author: {author.name} with topics: {author.primary_topics}")
-                    if _author_matches_keywords(author, expanded_keywords):
+                    if _author_matches_keywords(author, expanded_keywords, include_medical_doctors):
                         # Enrich with recent works
                         await _enrich_author_with_recent_works(
                             client, author, expanded_keywords, years_window
@@ -211,7 +231,8 @@ async def _search_authors_by_institution(client, institution: Institution,
 
 async def _search_authors_through_works(client, institution: Institution, 
                                       expanded_keywords: ExpandedKeywords,
-                                      years_window: int) -> List[AuthorProfile]:
+                                      years_window: int,
+                                      include_medical_doctors: bool = False) -> List[AuthorProfile]:
     """Find authors by searching their works at the institution."""
     authors = []
     current_year = datetime.now().year
@@ -220,44 +241,61 @@ async def _search_authors_through_works(client, institution: Institution,
     # Search works by institution and keywords - limit to prevent rate limiting
     keyword_batches = _batch_keywords(expanded_keywords.all_expanded, batch_size=3)[:5]  # Only first 5 batches
     for keyword_batch in keyword_batches:
-        try:
-            keyword_query = " OR ".join([f'"{kw}"' for kw in keyword_batch])
-            
-            # Use OpenAlex Institution ID if available, fallback to ROR ID
-            institution_filter = None
-            if institution.openalex_id:
-                institution_filter = f"institutions.id:https://openalex.org/{institution.openalex_id}"
-            else:
-                institution_filter = f"institutions.id:https://ror.org/{institution.ror_id}"
-                logger.warning(f"No OpenAlex ID for works search at {institution.display_name}, using ROR ID")
-            
-            params = {
-                "filter": f"{institution_filter},publication_year:{from_year}-{current_year}",
-                "search": keyword_query,
-                "per_page": 200,
-                "mailto": OPENALEX_MAILTO,
-                "select": "id,title,publication_year,authorships,doi,topics,concepts"
-            }
-            
-            response = await cached_get_json(
-                client,
-                f"{API_ENDPOINTS['openalex']}/works",
-                params
-            )
-            
-            if response and "results" in response:
-                for work in response["results"]:
-                    work_authors = _extract_authors_from_work(work, institution)
-                    # Apply the same keyword filtering to works-based authors
-                    for author in work_authors:
-                        if _author_matches_keywords(author, expanded_keywords):
-                            authors.append(author)
-                            logger.debug(f"Added works-based author: {author.name}")
-                        else:
-                            logger.debug(f"Works-based author {author.name} filtered out by keywords")
+        # Implement fallback chain for institution filtering (same as direct author search)
+        filter_strategies = []
+        if institution.openalex_id:
+            filter_strategies.append((f"institutions.id:https://openalex.org/{institution.openalex_id}", "OpenAlex ID"))
+        if institution.ror_id:
+            filter_strategies.append((f"institutions.id:https://ror.org/{institution.ror_id}", "ROR ID"))
+        filter_strategies.append((f'institutions.display_name:"{institution.display_name}"', "Institution Name"))
+        
+        response = None
+        successful_strategy = None
+        
+        for institution_filter, strategy_name in filter_strategies:
+            try:
+                keyword_query = " OR ".join([f'"{kw}"' for kw in keyword_batch])
+                
+                params = {
+                    "filter": f"{institution_filter},publication_year:{from_year}-{current_year}",
+                    "search": keyword_query,
+                    "per_page": 200,
+                    "mailto": OPENALEX_MAILTO,
+                    "select": "id,title,publication_year,authorships,doi,topics,concepts"
+                }
+                
+                response = await cached_get_json(
+                    client,
+                    f"{API_ENDPOINTS['openalex']}/works",
+                    params
+                )
+                
+                if response and "results" in response and response["results"]:
+                    successful_strategy = strategy_name
+                    logger.debug(f"Works search succeeded using {strategy_name} for {institution.display_name}")
+                    break
+                else:
+                    logger.debug(f"Works search using {strategy_name} returned no results for {institution.display_name}")
                     
-        except Exception as e:
-            logger.warning(f"Works search failed for keywords {keyword_batch}: {e}")
+            except Exception as e:
+                logger.warning(f"Works search using {strategy_name} failed for {institution.display_name}: {e}")
+                continue
+        
+        if response and "results" in response:
+            if successful_strategy:
+                logger.debug(f"Successfully found works for {institution.display_name} using {successful_strategy}")
+            
+            for work in response["results"]:
+                work_authors = _extract_authors_from_work(work, institution)
+                # Apply the same keyword filtering to works-based authors
+                for author in work_authors:
+                    if _author_matches_keywords(author, expanded_keywords, include_medical_doctors):
+                        authors.append(author)
+                        logger.debug(f"Added works-based author: {author.name}")
+                    else:
+                        logger.debug(f"Works-based author {author.name} filtered out by keywords")
+        else:
+            logger.warning(f"All fallback strategies failed for works search at {institution.display_name}")
         
         # Add delay between keyword batch requests
         await asyncio.sleep(2)
@@ -445,7 +483,7 @@ def _reconstruct_abstract(inverted_index: Dict[str, List[int]]) -> str:
         return ""
 
 
-def _author_matches_keywords(author: AuthorProfile, expanded_keywords: ExpandedKeywords) -> bool:
+def _author_matches_keywords(author: AuthorProfile, expanded_keywords: ExpandedKeywords, include_medical_doctors: bool = False) -> bool:
     """Check if author matches keywords AND is likely a good graduate advisor."""
     import os
     
@@ -568,6 +606,45 @@ def _author_matches_keywords(author: AuthorProfile, expanded_keywords: ExpandedK
         if (expanded_matches / len(expanded_keywords.all_expanded)) < min_expanded_ratio:
             logger.debug(f"Excluding {author.name}: low expanded keyword coverage ({expanded_matches}/{len(expanded_keywords.all_expanded)} = {expanded_matches/len(expanded_keywords.all_expanded):.1%})")
             return False
+    
+    # Rule 4: Medical doctor filtering (default: exclude for pure research focus)
+    if not include_medical_doctors:
+        medical_indicators = {
+            # Core medical practice (be more specific to avoid false positives)
+            'clinical medicine', 'physician', 'medical doctor', 'hospital medicine',
+            'patient care', 'clinical practice', 'medical school', 'residency training',
+            'medical residency', 'fellowship training',
+            
+            # Specific medical specialties (not research areas)
+            'surgery', 'surgical', 'anesthesiology', 'radiology', 'pathology', 
+            'emergency medicine', 'family medicine', 'internal medicine',
+            'cardiology practice', 'oncology practice', 'dermatology', 'pediatric medicine',
+            'obstetrics', 'gynecology', 'urology', 'ophthalmology', 'orthopedic surgery',
+            
+            # Clinical psychiatry (not research psychiatry)
+            'clinical psychiatry', 'psychiatric practice', 'mental health services',
+            'psychiatric hospital', 'psychiatric ward'
+            
+            # Note: Removed generic terms like 'medicine', 'medical', 'psychiatry' 
+            # that could also apply to research areas
+        }
+        
+        # Count medical indicators in author topics
+        medical_count = 0
+        for topic in author.primary_topics[:5]:  # Check top 5 topics
+            topic_lower = topic.lower()
+            for indicator in medical_indicators:
+                if indicator in topic_lower:
+                    medical_count += 1
+                    break
+        
+        # If heavily dominated by medical indicators, exclude (unless user specifically enabled medical)
+        # Using 3+ indicators to be more conservative and avoid false positives
+        if medical_count >= 3:
+            logger.warning(f"Excluding {author.name}: medical doctor/clinical focus detected ({medical_count} medical indicators). Topics: {author.primary_topics[:3]}")
+            return False
+        elif medical_count >= 1:
+            logger.debug(f"Author {author.name} has {medical_count} medical indicators but keeping. Topics: {author.primary_topics[:3]}")
     
     # TODO: Add advisor-specific filters here:
     # - Active grants (indicates capacity)

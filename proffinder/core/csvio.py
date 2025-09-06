@@ -43,35 +43,35 @@ def convert_results_to_csv_rows(results: List[AuthorResult]) -> List[CSVRow]:
             display = display_text or url
             return f'=HYPERLINK("{url}","{display}")'
         
-        # Create CSV row with Excel-compatible hyperlinks
+        # Create CSV row with Excel-compatible hyperlinks and safe field access
         csv_row = CSVRow(
             institution_name=profile.institution.name if profile.institution else "",
             institution_ror=profile.institution.ror_id if profile.institution else "",
-            author_name=profile.name,
+            author_name=profile.name or "",
             openalex_id=make_excel_link(f"https://openalex.org/{profile.openalex_id}", "OpenAlex Profile") if profile.openalex_id else "",
             orcid_id=make_excel_link(f"https://orcid.org/{profile.orcid_id.replace('https://orcid.org/', '')}", "ORCID Profile") if profile.orcid_id else "",
-            current_title=profile.current_title,
-            department=profile.department,
+            current_title=profile.current_title or "",
+            department=profile.department or "",
             homepage_url=make_excel_link(profile.homepage_url, "Website") if profile.homepage_url else "",
-            primary_topics_or_concepts="; ".join(profile.primary_topics),
-            matched_keywords="; ".join(evidence.matched_keywords),
+            primary_topics_or_concepts="; ".join(profile.primary_topics) if profile.primary_topics else "",
+            matched_keywords="; ".join(evidence.matched_keywords) if evidence.matched_keywords else "",
             recent_pubs_count=len(recent_pubs),
-            example_pub_titles=example_titles,
+            example_pub_titles=example_titles or "",
             active_grants_count=len(active_grants),
-            funders=funders,
-            grant_ids=grant_ids,
+            funders=funders or "",
+            grant_ids=grant_ids or "",
             grant_urls="; ".join([make_excel_link(url, f"Grant {i+1}") for i, url in enumerate(grant_urls.split("; ")) if url.strip()]) if grant_urls else "",
-            grant_confidence=grant_confidence,
+            grant_confidence=grant_confidence or "",
             is_recruiting=recruitment.is_recruiting if recruitment else None,  # None means unknown
             recruiting_snippet=recruitment.snippet if recruitment else "",
             recruiting_url=make_excel_link(recruitment.url, "Recruiting Page") if recruitment and recruitment.url else "",
-            concept_score=round(scores.concept_score, 3),
-            recent_works_score=round(scores.recent_works_score, 3),
-            grant_score=round(scores.grant_score, 3),
-            final_score=round(scores.final_score, 3),
-            evidence_urls="; ".join(evidence.evidence_urls),
-            last_seen_utc=evidence.last_seen_utc.isoformat(),
-            sources_used="; ".join(evidence.sources_used)
+            concept_score=round(scores.concept_score, 3) if scores.concept_score is not None else 0.0,
+            recent_works_score=round(scores.recent_works_score, 3) if scores.recent_works_score is not None else 0.0,
+            grant_score=round(scores.grant_score, 3) if scores.grant_score is not None else 0.0,
+            final_score=round(scores.final_score, 3) if scores.final_score is not None else 0.0,
+            evidence_urls="; ".join(evidence.evidence_urls) if evidence.evidence_urls else "",
+            last_seen_utc=evidence.last_seen_utc.isoformat() if evidence.last_seen_utc else "",
+            sources_used="; ".join(evidence.sources_used) if evidence.sources_used else ""
         )
         
         csv_rows.append(csv_row)

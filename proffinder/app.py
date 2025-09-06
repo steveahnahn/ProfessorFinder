@@ -250,7 +250,17 @@ def main():
             help="Enable to search for grants. Adds 10-20 seconds but provides funding information. Note: Grants don't affect ranking.",
             key="include_grants_checkbox"
         )
-        st.info("💡 Tip: Disable for 2-3x faster results! Grant data is for reference only and doesn't affect professor rankings.")
+        
+        include_medical_doctors = st.checkbox(
+            "🩺 Include Medical Doctors & Psychiatrists", 
+            value=False,
+            help="Enable to include MDs, psychiatrists, and clinical practitioners. Disable (default) for pure research/academia focus.",
+            key="include_medical_checkbox"
+        )
+        
+        st.info("💡 **Performance Tips:**")
+        st.info("• **Grants OFF**: 2-3x faster results")
+        st.info("• **Medical Doctors OFF**: Focus on research professors, exclude clinical practitioners")
         
     # University selection section
     st.markdown(f'<div class="section-header">🏫 {get_text("institutions_label", lang)}</div>', unsafe_allow_html=True)
@@ -402,12 +412,12 @@ def main():
     if search_clicked:
         st.session_state['search_running'] = True
         try:
-            run_search(selected_universities, keywords_list, years_window, lang, max_per_university, include_grants)
+            run_search(selected_universities, keywords_list, years_window, lang, max_per_university, include_grants, include_medical_doctors)
         finally:
             st.session_state['search_running'] = False
 
 
-async def run_search_pipeline(institutions: List[str], keywords: List[str], years_window: int, lang: str = "en"):
+async def run_search_pipeline(institutions: List[str], keywords: List[str], years_window: int, lang: str = "en", include_medical_doctors: bool = False):
     """Run the complete search pipeline."""
     progress_bar = st.progress(0)
     status_text = st.empty()
@@ -449,7 +459,7 @@ async def run_search_pipeline(institutions: List[str], keywords: List[str], year
         all_authors = []
         for i, institution in enumerate(resolved_institutions):
             institution_authors = await find_authors_by_institution(
-                institution, expanded_keywords, years_window
+                institution, expanded_keywords, years_window, include_medical_doctors
             )
             all_authors.extend(institution_authors)
             
@@ -523,6 +533,11 @@ async def run_search_pipeline(institutions: List[str], keywords: List[str], year
         progress_bar.progress(100)
         status_text.text("✅ Search completed!")
         
+        # Final completion log with summary
+        logger.info(f"🎉 SEARCH COMPLETE: Found {len(ranked_results)} professors total")
+        logger.info(f"📊 BREAKDOWN: {sum(1 for r in ranked_results if r.scores.final_score > 0.7)} high-relevance (>0.7), {sum(1 for r in ranked_results if 0.4 < r.scores.final_score <= 0.7)} medium-relevance (0.4-0.7)")
+        logger.info(f"🏫 INSTITUTIONS: {len(set([r.evidence.profile.institution.display_name for r in ranked_results if r.evidence.profile.institution]))} different universities represented")
+        
         return ranked_results
         
     except Exception as e:
@@ -586,14 +601,14 @@ def _build_sources_list(author) -> List[str]:
     return sources
 
 
-def run_search(institutions: List[str], keywords: List[str], years_window: int, lang: str = "en", max_per_university: int = 5, include_grants: bool = False):
+def run_search(institutions: List[str], keywords: List[str], years_window: int, lang: str = "en", max_per_university: int = 5, include_grants: bool = False, include_medical_doctors: bool = False):
     """Run the search and display results."""
     
     # Show search progress
     st.markdown(f"### {get_text('results_title', lang)}")
     
     # Run the async pipeline
-    results = asyncio.run(run_search_pipeline(institutions, keywords, years_window, lang))
+    results = asyncio.run(run_search_pipeline(institutions, keywords, years_window, lang, include_medical_doctors))
     
     if not results:
         return
@@ -791,28 +806,50 @@ def run_search(institutions: List[str], keywords: List[str], years_window: int, 
     st.markdown("<br>", unsafe_allow_html=True)
     
     try:
-        csv_data = create_csv_download(results)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"ShinHaEun_professor_search_{timestamp}.csv"
-        
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
-            st.download_button(
-                label=get_text("download_csv", lang),
-                data=csv_data,
-                file_name=filename,
-                mime="text/csv",
-                type="primary",
-                help=get_text("download_help", lang),
-                key="download_btn"
-            )
+        # Add validation before CSV generation
+        if not results:
+            st.error("❌ No results to download")
+        else:
+            # Validate data integrity 
+            valid_results = [r for r in results if r and r.evidence and r.evidence.profile and r.evidence.profile.name]
+            if not valid_results:
+                st.error("❌ No valid professor data found for CSV export")
+                st.info(f"Debug: Total results: {len(results)}, Valid results: 0")
+            else:
+                csv_data = create_csv_download(valid_results)
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = f"ShinHaEun_professor_search_{timestamp}.csv"
+                
+                # Verify CSV data is not empty
+                if not csv_data or len(csv_data) < 100:  # At least header + some data
+                    st.error("❌ Generated CSV file is empty or corrupted")
+                    st.info(f"Debug: CSV data length: {len(csv_data) if csv_data else 0} bytes")
+                else:
+                    col1, col2, col3 = st.columns([1, 2, 1])
+                    with col2:
+                        st.download_button(
+                            label=get_text("download_csv", lang),
+                            data=csv_data,
+                            file_name=filename,
+                            mime="text/csv",
+                            type="primary",
+                            help=get_text("download_help", lang),
+                            key="download_btn"
+                        )
+                    # Show CSV stats for confidence  
+                    st.success(f"✅ CSV ready: {len(valid_results)} professors, {len(csv_data):,} bytes")
         
         # Personalized completion message
         st.success(f"🎉 {get_text('complete', lang)}")
         
     except Exception as e:
         logger.error(f"CSV generation failed: {e}")
-        st.error("Failed to generate CSV. Please try again or contact support.")
+        st.error(f"❌ Error generating CSV: {str(e)}")
+        st.info("Please try the search again or contact support if the issue persists.")
+        # Show detailed error for debugging in deployed version
+        with st.expander("🔧 Debug Details (for troubleshooting)"):
+            import traceback
+            st.code(traceback.format_exc())
 
 
 def display_results_table(results: List[AuthorResult], lang: str = "en"):
