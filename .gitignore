@@ -4,3 +4,4 @@ venv
 *.pyc
 __pycache__/
 .proffinder_cache/
+.DS_Store

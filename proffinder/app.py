@@ -28,7 +28,7 @@ from core.universities import (
 # Source imports
 from sources.ror import resolve_institutions
 from sources.openalex import find_authors_by_institution
-from sources.orcid import enrich_authors_with_orcid
+# from sources.orcid import enrich_authors_with_orcid  # Removed for speed optimization
 from sources.nih import search_grants_for_authors
 from sources.nsf import search_nsf_grants_for_authors
 from sources.recruit import detect_recruitment_signals
@@ -241,6 +241,16 @@ def main():
         )
     
     st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Advanced Options Section
+    with st.expander("⚙️ Advanced Options", expanded=False):
+        include_grants = st.checkbox(
+            "🔍 Include Grant Search (NIH/NSF)",
+            value=False,
+            help="Enable to search for grants. Adds 10-20 seconds but provides funding information. Note: Grants don't affect ranking.",
+            key="include_grants_checkbox"
+        )
+        st.info("💡 Tip: Disable for 2-3x faster results! Grant data is for reference only and doesn't affect professor rankings.")
         
     # University selection section
     st.markdown(f'<div class="section-header">🏫 {get_text("institutions_label", lang)}</div>', unsafe_allow_html=True)
@@ -392,7 +402,7 @@ def main():
     if search_clicked:
         st.session_state['search_running'] = True
         try:
-            run_search(selected_universities, keywords_list, years_window, lang, max_per_university)
+            run_search(selected_universities, keywords_list, years_window, lang, max_per_university, include_grants)
         finally:
             st.session_state['search_running'] = False
 
@@ -456,30 +466,20 @@ async def run_search_pipeline(institutions: List[str], keywords: List[str], year
         with log_container:
             st.success(f"Total authors found: {len(all_authors)}")
         
-        # Step 4: Enrich with ORCID data
-        status_text.text("🆔 Enriching with ORCID profiles...")
+        # Step 4: Skip ORCID enrichment for speed (was taking 1-2 sec per author)
+        # await enrich_authors_with_orcid(all_authors)
+        
+        # Step 5: Initialize empty grants list (grants now fetched later if enabled)
+        # Removed automatic grant search here - now controlled by user toggle
         progress_bar.progress(70)
         
-        await enrich_authors_with_orcid(all_authors)
-        
-        # Step 5: Search for grants
-        status_text.text("💰 Searching for grants...")
-        progress_bar.progress(80)
-        
-        # Initialize grants list for all authors
+        # Initialize grants list for all authors (empty by default)
         for author in all_authors:
             author.grants = []
         
-        # Search grants for each institution
-        for institution in resolved_institutions:
-            institution_authors = [a for a in all_authors if a.institution and a.institution.ror_id == institution.ror_id]
-            if institution_authors:
-                await search_grants_for_authors(institution_authors, institution)
-                await search_nsf_grants_for_authors(institution_authors, institution)
-        
-        # Step 6: Check recruitment signals
+        # Step 6: Check recruitment signals (moved from 85 to 80 since we removed ORCID)
         status_text.text(get_text("checking_recruitment", lang))
-        progress_bar.progress(85)
+        progress_bar.progress(80)
         
         await detect_recruitment_signals(all_authors)
         
@@ -586,7 +586,7 @@ def _build_sources_list(author) -> List[str]:
     return sources
 
 
-def run_search(institutions: List[str], keywords: List[str], years_window: int, lang: str = "en", max_per_university: int = 5):
+def run_search(institutions: List[str], keywords: List[str], years_window: int, lang: str = "en", max_per_university: int = 5, include_grants: bool = False):
     """Run the search and display results."""
     
     # Show search progress
@@ -613,80 +613,83 @@ def run_search(institutions: List[str], keywords: List[str], years_window: int, 
         
         results = filtered_results
         
-        # Now fetch grants ONLY for the final filtered results (much more efficient!)
-        st.info(f"🔍 Fetching grant data for {len(results)} final results...")
-        
-        # Group results by institution for efficient grant fetching
-        results_by_institution = {}
-        for result in results:
-            institution_name = result.evidence.profile.institution.display_name if result.evidence.profile.institution else "Unknown"
-            if institution_name not in results_by_institution:
-                results_by_institution[institution_name] = []
-            results_by_institution[institution_name].append(result)
-        
-        # Fetch grants for each institution's final results
-        async def fetch_grants_for_filtered_results():
-            # First resolve institutions to get Institution objects
-            from sources.ror import resolve_institutions
-            resolved_institutions = await resolve_institutions(institutions)
+        # Only fetch grants if user opted in
+        if include_grants:
+            # Now fetch grants ONLY for the final filtered results (much more efficient!)
+            st.info(f"🔍 Fetching grant data for {len(results)} final results...")
             
-            for institution_name, institution_results in results_by_institution.items():
-                authors = [result.evidence.profile for result in institution_results]
-                # Find matching resolved institution
-                matching_institution = None
-                for resolved_inst in resolved_institutions:
-                    if resolved_inst.display_name == institution_name:
-                        matching_institution = resolved_inst
-                        break
+            # Group results by institution for efficient grant fetching
+            results_by_institution = {}
+            for result in results:
+                institution_name = result.evidence.profile.institution.display_name if result.evidence.profile.institution else "Unknown"
+                if institution_name not in results_by_institution:
+                    results_by_institution[institution_name] = []
+                results_by_institution[institution_name].append(result)
+            
+            # Fetch grants for each institution's final results
+            async def fetch_grants_for_filtered_results():
+                # First resolve institutions to get Institution objects
+                from sources.ror import resolve_institutions
+                resolved_institutions = await resolve_institutions(institutions)
                 
-                if matching_institution:
-                    try:
-                        await search_grants_for_authors(authors, matching_institution)
-                        await search_nsf_grants_for_authors(authors, matching_institution)
-                    except Exception as e:
-                        logger.warning(f"Could not fetch grants for {institution_name}: {e}")
-        
-        # Run the grant fetching
-        asyncio.run(fetch_grants_for_filtered_results())
-        st.success(f"✅ Grant data fetched for filtered results")
+                for institution_name, institution_results in results_by_institution.items():
+                    authors = [result.evidence.profile for result in institution_results]
+                    # Find matching resolved institution
+                    matching_institution = None
+                    for resolved_inst in resolved_institutions:
+                        if resolved_inst.display_name == institution_name:
+                            matching_institution = resolved_inst
+                            break
+                    
+                    if matching_institution:
+                        try:
+                            await search_grants_for_authors(authors, matching_institution)
+                            await search_nsf_grants_for_authors(authors, matching_institution)
+                        except Exception as e:
+                            logger.warning(f"Could not fetch grants for {institution_name}: {e}")
+            
+            # Run the grant fetching
+            asyncio.run(fetch_grants_for_filtered_results())
+            st.success(f"✅ Grant data fetched for filtered results")
         
     else:
-        # No filtering applied, fetch grants for all results
-        st.info(f"🔍 Fetching grant data for {len(results)} results...")
-        
-        # Group all results by institution
-        results_by_institution = {}
-        for result in results:
-            institution_name = result.evidence.profile.institution.display_name if result.evidence.profile.institution else "Unknown"
-            if institution_name not in results_by_institution:
-                results_by_institution[institution_name] = []
-            results_by_institution[institution_name].append(result)
-        
-        # Fetch grants for all results
-        async def fetch_grants_for_all_results():
-            # First resolve institutions to get Institution objects
-            from sources.ror import resolve_institutions
-            resolved_institutions = await resolve_institutions(institutions)
+        # No filtering applied, only fetch grants if user opted in
+        if include_grants:
+            st.info(f"🔍 Fetching grant data for {len(results)} results...")
             
-            for institution_name, institution_results in results_by_institution.items():
-                authors = [result.evidence.profile for result in institution_results]
-                # Find matching institution
-                matching_institution = None
-                for resolved_inst in resolved_institutions:
-                    if resolved_inst.display_name == institution_name:
-                        matching_institution = resolved_inst
-                        break
+            # Group all results by institution
+            results_by_institution = {}
+            for result in results:
+                institution_name = result.evidence.profile.institution.display_name if result.evidence.profile.institution else "Unknown"
+                if institution_name not in results_by_institution:
+                    results_by_institution[institution_name] = []
+                results_by_institution[institution_name].append(result)
+            
+            # Fetch grants for all results
+            async def fetch_grants_for_all_results():
+                # First resolve institutions to get Institution objects
+                from sources.ror import resolve_institutions
+                resolved_institutions = await resolve_institutions(institutions)
                 
-                if matching_institution:
-                    try:
-                        await search_grants_for_authors(authors, matching_institution)
-                        await search_nsf_grants_for_authors(authors, matching_institution)
-                    except Exception as e:
-                        logger.warning(f"Could not fetch grants for {institution_name}: {e}")
-        
-        # Run the grant fetching
-        asyncio.run(fetch_grants_for_all_results())
-        st.success(f"✅ Grant data fetched for all results")
+                for institution_name, institution_results in results_by_institution.items():
+                    authors = [result.evidence.profile for result in institution_results]
+                    # Find matching institution
+                    matching_institution = None
+                    for resolved_inst in resolved_institutions:
+                        if resolved_inst.display_name == institution_name:
+                            matching_institution = resolved_inst
+                            break
+                    
+                    if matching_institution:
+                        try:
+                            await search_grants_for_authors(authors, matching_institution)
+                            await search_nsf_grants_for_authors(authors, matching_institution)
+                        except Exception as e:
+                            logger.warning(f"Could not fetch grants for {institution_name}: {e}")
+            
+            # Run the grant fetching
+            asyncio.run(fetch_grants_for_all_results())
+            st.success(f"✅ Grant data fetched for all results")
     
     # Display results with engaging design
     st.markdown(f"""
