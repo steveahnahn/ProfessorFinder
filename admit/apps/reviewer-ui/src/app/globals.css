@@ -1,0 +1,6 @@
+@import "tailwindcss";
+
+/* Simple, clean design system for the reviewer UI */
+body {
+  font-feature-settings: "rlig" 1, "calt" 1;
+}

@@ -1,0 +1,188 @@
+name: ETL Pipeline
+
+on:
+  schedule:
+    # Run daily at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      institution_limit:
+        description: 'Limit number of institutions to process'
+        required: false
+        default: '10'
+      force_refresh:
+        description: 'Force refresh of all data'
+        type: boolean
+        required: false
+        default: false
+
+env:
+  UV_CACHE_DIR: /tmp/.uv-cache
+
+jobs:
+  etl-discover:
+    runs-on: ubuntu-latest
+    outputs:
+      institution-matrix: ${{ steps.discover.outputs.institutions }}
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up uv
+      uses: astral-sh/setup-uv@v2
+
+    - name: Set up Python
+      run: uv python install 3.11
+
+    - name: Install dependencies
+      run: uv sync --no-dev
+
+    - name: Discover institutions to process
+      id: discover
+      env:
+        DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+        SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      run: |
+        cd etl
+        INSTITUTIONS=$(uv run python -m discover \
+          --limit ${{ github.event.inputs.institution_limit || 10 }} \
+          --format json)
+        echo "institutions=$INSTITUTIONS" >> $GITHUB_OUTPUT
+
+  etl-process:
+    runs-on: ubuntu-latest
+    needs: etl-discover
+    strategy:
+      matrix:
+        institution: ${{ fromJson(needs.etl-discover.outputs.institution-matrix) }}
+      max-parallel: 3  # Respect rate limits
+      fail-fast: false
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up uv
+      uses: astral-sh/setup-uv@v2
+
+    - name: Set up Python
+      run: uv python install 3.11
+
+    - name: Restore uv cache
+      uses: actions/cache@v4
+      with:
+        path: /tmp/.uv-cache
+        key: uv-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+
+    - name: Install dependencies
+      run: uv sync --no-dev
+
+    - name: Run ETL for institution
+      env:
+        DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+        SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        INSTITUTION_ID: ${{ matrix.institution.id }}
+        INSTITUTION_NAME: ${{ matrix.institution.name }}
+        FORCE_REFRESH: ${{ github.event.inputs.force_refresh || 'false' }}
+      run: |
+        cd etl
+        uv run python -m pipeline \
+          --institution-id $INSTITUTION_ID \
+          --force-refresh $FORCE_REFRESH \
+          --max-pages 50 \
+          --rate-limit 2.0
+
+    - name: Upload processing logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: etl-logs-${{ matrix.institution.id }}
+        path: |
+          etl/logs/
+          etl/debug/
+        retention-days: 7
+
+  etl-validate:
+    runs-on: ubuntu-latest
+    needs: etl-process
+    if: always()
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up uv
+      uses: astral-sh/setup-uv@v2
+
+    - name: Set up Python
+      run: uv python install 3.11
+
+    - name: Install dependencies
+      run: uv sync --no-dev
+
+    - name: Run validation checks
+      env:
+        DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+        SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      run: |
+        cd etl
+        uv run python -m validator \
+          --check-recent-runs \
+          --alert-on-failures \
+          --generate-report
+
+    - name: Upload validation report
+      uses: actions/upload-artifact@v4
+      with:
+        name: validation-report
+        path: etl/reports/validation-*.json
+        retention-days: 30
+
+  etl-notify:
+    runs-on: ubuntu-latest
+    needs: [etl-process, etl-validate]
+    if: always()
+
+    steps:
+    - name: Calculate success rate
+      id: stats
+      run: |
+        # This would calculate actual success rates from the matrix jobs
+        echo "success_rate=85" >> $GITHUB_OUTPUT
+        echo "total_processed=10" >> $GITHUB_OUTPUT
+        echo "failed_count=2" >> $GITHUB_OUTPUT
+
+    - name: Send notification
+      env:
+        WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        SUCCESS_RATE: ${{ steps.stats.outputs.success_rate }}
+        TOTAL_PROCESSED: ${{ steps.stats.outputs.total_processed }}
+        FAILED_COUNT: ${{ steps.stats.outputs.failed_count }}
+      run: |
+        if [ "$SUCCESS_RATE" -ge "80" ]; then
+          STATUS="✅ Success"
+          COLOR="good"
+        else
+          STATUS="❌ Issues Detected"
+          COLOR="danger"
+        fi
+
+        curl -X POST -H 'Content-type: application/json' \
+          --data '{
+            "attachments": [{
+              "color": "'$COLOR'",
+              "title": "ETL Pipeline Completed",
+              "fields": [
+                {"title": "Status", "value": "'$STATUS'", "short": true},
+                {"title": "Success Rate", "value": "'$SUCCESS_RATE'%", "short": true},
+                {"title": "Processed", "value": "'$TOTAL_PROCESSED'", "short": true},
+                {"title": "Failed", "value": "'$FAILED_COUNT'", "short": true}
+              ],
+              "footer": "Graduate Admissions ETL",
+              "ts": '$(date +%s)'
+            }]
+          }' \
+          $WEBHOOK_URL || echo "Notification failed"

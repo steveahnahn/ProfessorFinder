@@ -1,0 +1,9 @@
+[project]
+name = "admit-schemas"
+version = "0.1.0"
+description = "Shared Pydantic schemas for Graduate Admissions platform"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.5.0",
+    "python-dateutil>=2.8.0",
+]

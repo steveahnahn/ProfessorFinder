@@ -1,0 +1,785 @@
+{
+  "$defs": {
+    "ApplicationComponents": {
+      "description": "Required application components",
+      "properties": {
+        "sop_required": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sop Required"
+        },
+        "rec_min": {
+          "anyOf": [
+            {
+              "maximum": 10,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rec Min"
+        },
+        "rec_max": {
+          "anyOf": [
+            {
+              "maximum": 10,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rec Max"
+        },
+        "resume_required": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Resume Required"
+        },
+        "portfolio_required": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Portfolio Required"
+        },
+        "writing_sample_required": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Writing Sample Required"
+        },
+        "prereq_list": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Prereq List",
+          "type": "array"
+        },
+        "gpa_min": {
+          "anyOf": [
+            {
+              "maximum": 4.0,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gpa Min"
+        },
+        "experience_years_min": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Experience Years Min"
+        },
+        "fee_amount": {
+          "anyOf": [
+            {
+              "maximum": 1000,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fee Amount"
+        },
+        "fee_waiver_policy_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fee Waiver Policy Url"
+        }
+      },
+      "title": "ApplicationComponents",
+      "type": "object"
+    },
+    "Audience": {
+      "enum": [
+        "domestic",
+        "international",
+        "both"
+      ],
+      "title": "Audience",
+      "type": "string"
+    },
+    "Audit": {
+      "description": "Audit trail information",
+      "properties": {
+        "last_verified_at": {
+          "format": "date-time",
+          "title": "Last Verified At",
+          "type": "string"
+        },
+        "confidence": {
+          "default": 0.0,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "extraction_method": {
+          "default": "unknown",
+          "title": "Extraction Method",
+          "type": "string"
+        },
+        "parse_version": {
+          "default": "1.0",
+          "title": "Parse Version",
+          "type": "string"
+        },
+        "rules_version": {
+          "default": "1.0",
+          "title": "Rules Version",
+          "type": "string"
+        },
+        "notes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Notes"
+        }
+      },
+      "required": [
+        "last_verified_at"
+      ],
+      "title": "Audit",
+      "type": "object"
+    },
+    "Citation": {
+      "description": "Citation mapping field to source text",
+      "properties": {
+        "field_name": {
+          "title": "Field Name",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/CitationKind"
+        },
+        "selector": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Selector"
+        },
+        "page_num": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Page Num"
+        },
+        "line_start": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Line Start"
+        },
+        "line_end": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Line End"
+        },
+        "snippet": {
+          "title": "Snippet",
+          "type": "string"
+        }
+      },
+      "required": [
+        "field_name",
+        "kind",
+        "snippet"
+      ],
+      "title": "Citation",
+      "type": "object"
+    },
+    "CitationKind": {
+      "enum": [
+        "html",
+        "pdf",
+        "manual"
+      ],
+      "title": "CitationKind",
+      "type": "string"
+    },
+    "Contact": {
+      "description": "Contact information",
+      "properties": {
+        "contact_type": {
+          "default": "general",
+          "title": "Contact Type",
+          "type": "string"
+        },
+        "email": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Email"
+        },
+        "phone": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Phone"
+        },
+        "address": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Address"
+        }
+      },
+      "title": "Contact",
+      "type": "object"
+    },
+    "Deadline": {
+      "description": "Application deadline",
+      "properties": {
+        "deadline_type": {
+          "$ref": "#/$defs/DeadlineType"
+        },
+        "deadline_ts": {
+          "format": "date-time",
+          "title": "Deadline Ts",
+          "type": "string"
+        },
+        "rolling_flag": {
+          "default": false,
+          "title": "Rolling Flag",
+          "type": "boolean"
+        },
+        "audience": {
+          "$ref": "#/$defs/Audience",
+          "default": "both"
+        }
+      },
+      "required": [
+        "deadline_type",
+        "deadline_ts"
+      ],
+      "title": "Deadline",
+      "type": "object"
+    },
+    "DeadlineType": {
+      "enum": [
+        "priority",
+        "regular",
+        "final",
+        "scholarship",
+        "rolling"
+      ],
+      "title": "DeadlineType",
+      "type": "string"
+    },
+    "Degree": {
+      "enum": [
+        "MS",
+        "MA",
+        "MEng",
+        "MBA",
+        "PhD",
+        "EdD",
+        "JD",
+        "MD",
+        "DDS",
+        "PharmD",
+        "DVM",
+        "Other"
+      ],
+      "title": "Degree",
+      "type": "string"
+    },
+    "InternationalRequirements": {
+      "description": "International student specific requirements",
+      "properties": {
+        "wes_required": {
+          "default": false,
+          "title": "Wes Required",
+          "type": "boolean"
+        },
+        "ece_required": {
+          "default": false,
+          "title": "Ece Required",
+          "type": "boolean"
+        },
+        "transcript_policy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Transcript Policy"
+        },
+        "english_exemptions": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "English Exemptions"
+        },
+        "funding_docs_required": {
+          "default": true,
+          "title": "Funding Docs Required",
+          "type": "boolean"
+        },
+        "i20_processing_time_days": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "I20 Processing Time Days"
+        },
+        "intl_contact_email": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Intl Contact Email"
+        }
+      },
+      "title": "InternationalRequirements",
+      "type": "object"
+    },
+    "ProgramInfo": {
+      "description": "Program identification information",
+      "properties": {
+        "institution": {
+          "title": "Institution",
+          "type": "string"
+        },
+        "school": {
+          "title": "School",
+          "type": "string"
+        },
+        "department": {
+          "title": "Department",
+          "type": "string"
+        },
+        "program_name": {
+          "title": "Program Name",
+          "type": "string"
+        },
+        "degree": {
+          "$ref": "#/$defs/Degree"
+        },
+        "track": {
+          "default": "Full-Time",
+          "title": "Track",
+          "type": "string"
+        },
+        "website": {
+          "title": "Website",
+          "type": "string"
+        }
+      },
+      "required": [
+        "institution",
+        "school",
+        "department",
+        "program_name",
+        "degree",
+        "website"
+      ],
+      "title": "ProgramInfo",
+      "type": "object"
+    },
+    "Provenance": {
+      "description": "Source and verification information",
+      "properties": {
+        "source_url": {
+          "title": "Source Url",
+          "type": "string"
+        },
+        "citations": {
+          "items": {
+            "$ref": "#/$defs/Citation"
+          },
+          "title": "Citations",
+          "type": "array"
+        }
+      },
+      "required": [
+        "source_url"
+      ],
+      "title": "Provenance",
+      "type": "object"
+    },
+    "TOEFLSectionMinima": {
+      "description": "TOEFL section minimum scores",
+      "properties": {
+        "reading": {
+          "anyOf": [
+            {
+              "maximum": 30,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reading"
+        },
+        "listening": {
+          "anyOf": [
+            {
+              "maximum": 30,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Listening"
+        },
+        "speaking": {
+          "anyOf": [
+            {
+              "maximum": 30,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Speaking"
+        },
+        "writing": {
+          "anyOf": [
+            {
+              "maximum": 30,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Writing"
+        }
+      },
+      "title": "TOEFLSectionMinima",
+      "type": "object"
+    },
+    "TestRequirements": {
+      "description": "Test requirements and scores",
+      "properties": {
+        "gre_status": {
+          "$ref": "#/$defs/TestStatus",
+          "default": "unknown"
+        },
+        "gmat_status": {
+          "$ref": "#/$defs/TestStatus",
+          "default": "unknown"
+        },
+        "lsat_status": {
+          "$ref": "#/$defs/TestStatus",
+          "default": "unknown"
+        },
+        "mcat_status": {
+          "$ref": "#/$defs/TestStatus",
+          "default": "unknown"
+        },
+        "toefl_min": {
+          "anyOf": [
+            {
+              "maximum": 120,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Toefl Min"
+        },
+        "toefl_section_min": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TOEFLSectionMinima"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "ielts_min": {
+          "anyOf": [
+            {
+              "maximum": 9,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ielts Min"
+        },
+        "det_min": {
+          "anyOf": [
+            {
+              "maximum": 160,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Det Min"
+        },
+        "code_toefl": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9]{4}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Code Toefl"
+        },
+        "code_gre": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9]{4}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Code Gre"
+        },
+        "code_gmat": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Z0-9]{3,4}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Code Gmat"
+        },
+        "score_validity_months": {
+          "default": 24,
+          "title": "Score Validity Months",
+          "type": "integer"
+        }
+      },
+      "title": "TestRequirements",
+      "type": "object"
+    },
+    "TestStatus": {
+      "enum": [
+        "required",
+        "optional",
+        "recommended",
+        "not_accepted",
+        "waived",
+        "unknown"
+      ],
+      "title": "TestStatus",
+      "type": "string"
+    }
+  },
+  "description": "Complete extracted requirements for a program track",
+  "properties": {
+    "program": {
+      "$ref": "#/$defs/ProgramInfo"
+    },
+    "term_name": {
+      "default": "Fall",
+      "title": "Term Name",
+      "type": "string"
+    },
+    "term_year": {
+      "maximum": 2030,
+      "minimum": 2024,
+      "title": "Term Year",
+      "type": "integer"
+    },
+    "round_label": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Round Label"
+    },
+    "tests": {
+      "$ref": "#/$defs/TestRequirements"
+    },
+    "components": {
+      "$ref": "#/$defs/ApplicationComponents"
+    },
+    "intl": {
+      "$ref": "#/$defs/InternationalRequirements"
+    },
+    "deadlines": {
+      "items": {
+        "$ref": "#/$defs/Deadline"
+      },
+      "title": "Deadlines",
+      "type": "array"
+    },
+    "contacts": {
+      "items": {
+        "$ref": "#/$defs/Contact"
+      },
+      "title": "Contacts",
+      "type": "array"
+    },
+    "provenance": {
+      "$ref": "#/$defs/Provenance"
+    },
+    "audit": {
+      "$ref": "#/$defs/Audit"
+    }
+  },
+  "required": [
+    "program",
+    "term_year",
+    "provenance",
+    "audit"
+  ],
+  "title": "ExtractedRequirements",
+  "type": "object"
+}

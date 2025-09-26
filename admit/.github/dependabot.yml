@@ -1,0 +1,66 @@
+version: 2
+updates:
+  # Python dependencies
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      fastapi:
+        patterns:
+          - "fastapi*"
+          - "uvicorn*"
+          - "starlette*"
+      pydantic:
+        patterns:
+          - "pydantic*"
+      testing:
+        patterns:
+          - "pytest*"
+          - "coverage*"
+          - "httpx*"
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+
+  # Node.js dependencies (reviewer UI)
+  - package-ecosystem: "npm"
+    directory: "/apps/reviewer-ui"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      react:
+        patterns:
+          - "react*"
+          - "@types/react*"
+      nextjs:
+        patterns:
+          - "next*"
+          - "@next/*"
+      ui:
+        patterns:
+          - "@radix-ui/*"
+          - "lucide-react"
+          - "class-variance-authority"
+
+  # Node.js dependencies (mobile app)
+  - package-ecosystem: "npm"
+    directory: "/apps/mobile"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+    groups:
+      expo:
+        patterns:
+          - "expo*"
+          - "@expo/*"
+      react-native:
+        patterns:
+          - "react-native*"
+          - "@react-native/*"
